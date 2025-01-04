@@ -9,14 +9,12 @@ using System.Threading.Tasks;
 using System.Media;
 using System.Windows.Forms;
 using System.IO;
-using Microsoft.Win32;
 using System.Security.Cryptography;
 using System.Net;
 using System.IO.Compression;
 using System.Diagnostics;
-using Microsoft.VisualBasic.FileIO;
 using System.Runtime.InteropServices;
-using Microsoft.WindowsAPICodePack.Dialogs;
+using System.Runtime.Versioning;
 
 namespace TeconMoon_s_WiiVC_Injector
 {
@@ -35,9 +33,7 @@ namespace TeconMoon_s_WiiVC_Injector
             }
             Directory.CreateDirectory(TempRootPath);
             //Extract Tools to temp folder
-            File.WriteAllBytes(TempRootPath + "TOOLDIR.zip", Properties.Resources.TOOLDIR);
-            ZipFile.ExtractToDirectory(TempRootPath + "TOOLDIR.zip", TempRootPath);
-            File.Delete(TempRootPath + "TOOLDIR.zip");
+            ExtractTools();
             //Create Source and Build directories
             Directory.CreateDirectory(TempSourcePath);
             Directory.CreateDirectory(TempBuildPath);
@@ -46,19 +42,20 @@ namespace TeconMoon_s_WiiVC_Injector
         //Testing
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern int GetShortPathName(String pathName, StringBuilder shortName, int cbShortName);
-        public string ShortenPath(string pathtomakesafe)
+        public string ShortenPath(string pathToMakeSafe)
         {
-            StringBuilder sb = new StringBuilder(1000);
-            long n = GetShortPathName(pathtomakesafe, sb, 1000);
-            if (n == 0) // check for errors
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                return Marshal.GetLastWin32Error().ToString();
+                // Usa l'implementazione Windows esistente
+                StringBuilder sb = new StringBuilder(1000);
+                long n = GetShortPathName(pathToMakeSafe, sb, 1000);
+                return n == 0 ? Marshal.GetLastWin32Error().ToString() : sb.ToString();
             }
             else
             {
-                return sb.ToString();
+                // Per macOS/Linux usiamo il path normale
+                return Path.GetFullPath(pathToMakeSafe);
             }
-
         }
 
 
@@ -106,29 +103,90 @@ namespace TeconMoon_s_WiiVC_Injector
         ProcessStartInfo Launcher;
         string LauncherExeFile;
         string LauncherExeArgs;
-        string JNUSToolDownloads = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData) + "\\JNUSToolDownloads\\";
-        string TempRootPath = Path.GetTempPath() + "WiiVCInjector\\";
-        string TempSourcePath = Path.GetTempPath() + "WiiVCInjector\\SOURCETEMP\\";
-        string TempBuildPath = Path.GetTempPath() + "WiiVCInjector\\BUILDDIR\\";
-        string TempToolsPath = Path.GetTempPath() + "WiiVCInjector\\TOOLDIR\\";
-        string TempIconPath = Path.GetTempPath() + "WiiVCInjector\\SOURCETEMP\\iconTex.png";
-        string TempBannerPath = Path.GetTempPath() + "WiiVCInjector\\SOURCETEMP\\bootTvTex.png";
-        string TempDrcPath = Path.GetTempPath() + "WiiVCInjector\\SOURCETEMP\\bootDrcTex.png";
-        string TempLogoPath = Path.GetTempPath() + "WiiVCInjector\\SOURCETEMP\\bootLogoTex.png";
-        string TempSoundPath = Path.GetTempPath() + "WiiVCInjector\\SOURCETEMP\\bootSound.wav";
+        private readonly string JNUSToolDownloads = Path.Combine(
+            RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData)
+                : Environment.GetFolderPath(Environment.SpecialFolder.Personal),
+            RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? "JNUSToolDownloads"
+                : ".local/share/JNUSToolDownloads");
+        string TempRootPath = Path.Combine(GetTempBasePath(), "WiiVCInjector");
+        string TempSourcePath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "SOURCETEMP");
+        string TempBuildPath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "BUILDDIR");
+        string TempToolsPath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "TOOLDIR");
+        string TempIconPath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "SOURCETEMP", "iconTex.png");
+        string TempBannerPath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "SOURCETEMP", "bootTvTex.png");
+        string TempDrcPath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "SOURCETEMP", "bootDrcTex.png");
+        string TempLogoPath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "SOURCETEMP", "bootLogoTex.png");
+        string TempSoundPath = Path.Combine(GetTempBasePath(), "WiiVCInjector", "SOURCETEMP", "bootSound.wav");
         string OGfilepath;
         string selectedOutputPath;
+
+        // Sostituire tutte le definizioni dei percorsi
+        private string GetAppDataPath()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "Library/Application Support");
+            else
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".local/share");
+        }
+
+        private string GetTempBasePath()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return Path.GetTempPath();
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), "Library/Caches");
+            else
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), ".cache");
+        }
 
         //call options
         public void LaunchProgram()
         {
-            Launcher = new ProcessStartInfo(LauncherExeFile);
-            Launcher.Arguments = LauncherExeArgs;
-            if (HideProcess)
+            var startInfo = new ProcessStartInfo();
+            
+            string toolPath = GetNativeToolPath(LauncherExeFile);
+            
+            startInfo.FileName = toolPath;
+            startInfo.Arguments = LauncherExeArgs;
+            startInfo.UseShellExecute = false;
+            startInfo.RedirectStandardOutput = true;
+            startInfo.RedirectStandardError = true;
+            startInfo.CreateNoWindow = true;
+
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                Launcher.WindowStyle = ProcessWindowStyle.Hidden;
+                // Assicurati che il file sia eseguibile
+                FileSystemHelper.SetExecutablePermissions(toolPath);
             }
-            Process.Start(Launcher).WaitForExit();
+
+            try
+            {
+                using (var process = Process.Start(startInfo))
+                {
+                    if (process == null)
+                        throw new Exception($"Failed to start process: {toolPath}");
+                        
+                    process.WaitForExit();
+                    
+                    if (process.ExitCode != 0)
+                    {
+                        string error = process.StandardError.ReadToEnd();
+                        throw new Exception($"Process failed with exit code {process.ExitCode}: {error}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error executing {Path.GetFileName(toolPath)}: {ex.Message}", 
+                               "Error", 
+                               MessageBoxButtons.OK, 
+                               MessageBoxIcon.Error);
+                throw;
+            }
         }
         public static bool CheckForInternetConnection()
         {
@@ -210,19 +268,13 @@ namespace TeconMoon_s_WiiVC_Injector
         }
         private void CheckForNet35()
         {
+            // Rimuovere il controllo del registro di Windows
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return;
+            
             if (Registry.LocalMachine.OpenSubKey("SOFTWARE\\Microsoft\\NET Framework Setup\\NDP\\v3.5") == null)
             {
-                MessageBox.Show(".NET Framework 3.5 was not detected on your machine, which is required by programs used during the build process." +
-                                "\n\nYou should be able to enable this in \"Programs and Features\" under \"Turn Windows features on or off\", or download it from Microsoft." +
-                                "\n\nClick OK to close the injector and open \"Programs and Features\"...", ".NET Framework v3.5 not found..."
-                                , MessageBoxButtons.OK
-                                , MessageBoxIcon.Exclamation
-                                , MessageBoxDefaultButton.Button1
-                                , (MessageBoxOptions)0x40000);
-                HideProcess = false;
-                LauncherExeFile = "appwiz.cpl";
-                LauncherExeArgs = "";
-                LaunchProgram();
+                MessageBox.Show(".NET Framework 3.5 was not detected...");
                 Environment.Exit(0);
             }
         }
@@ -1695,15 +1747,13 @@ namespace TeconMoon_s_WiiVC_Injector
             }
             else
             {
-                var outputFolderSelect = new CommonOpenFileDialog("Specify your output folder")
+                var outputFolderSelect = new FolderBrowserDialog()
                 {
-                    InitialDirectory = Properties.Settings.Default.OutputPath,
-                    IsFolderPicker = true,
-                    EnsurePathExists = true
+                    Description = "Select output folder",
+                    ShowNewFolderButton = true
                 };
 
-                //Specify Path Variables to be called later
-                if (outputFolderSelect.ShowDialog() == CommonFileDialogResult.Cancel)
+                if (outputFolderSelect.ShowDialog() == DialogResult.Cancel)
                 {
                     MessageBox.Show("Output folder selection has been cancelled, conversion will not continue."
                                     , "Cancelled"
@@ -1714,7 +1764,7 @@ namespace TeconMoon_s_WiiVC_Injector
                     MainTabs.Enabled = true;
                     goto BuildProcessFin;
                 }
-                selectedOutputPath = outputFolderSelect.FileName;
+                selectedOutputPath = outputFolderSelect.SelectedPath;
                 Properties.Settings.Default.OutputPath = selectedOutputPath;
                 Properties.Settings.Default.Save();
             }
@@ -2050,8 +2100,11 @@ namespace TeconMoon_s_WiiVC_Injector
             }
             if (SystemType == "dol")
             {
-                FileSystem.CreateDirectory(TempSourcePath + "TEMPISOBASE");
-                FileSystem.CopyDirectory(TempToolsPath + "BASE", TempSourcePath + "TEMPISOBASE");
+                Directory.CreateDirectory(Path.Combine(TempSourcePath, "TEMPISOBASE"));
+                FileSystemHelper.CopyDirectory(
+                    Path.Combine(TempToolsPath, "BASE"),
+                    Path.Combine(TempSourcePath, "TEMPISOBASE")
+                );
                 File.Copy(OpenGame.FileName, TempSourcePath + "TEMPISOBASE\\sys\\main.dol");
                 LauncherExeFile = TempToolsPath + "WIT\\wit.exe";
                 LauncherExeArgs = "copy " + TempSourcePath + "TEMPISOBASE" + " --DEST " + TempSourcePath + "game.iso" + " -ovv --links --iso";
@@ -2061,8 +2114,11 @@ namespace TeconMoon_s_WiiVC_Injector
             }
             if (SystemType == "wiiware")
             {
-                FileSystem.CreateDirectory(TempSourcePath + "TEMPISOBASE");
-                FileSystem.CopyDirectory(TempToolsPath + "BASE", TempSourcePath + "TEMPISOBASE");
+                Directory.CreateDirectory(Path.Combine(TempSourcePath, "TEMPISOBASE"));
+                FileSystemHelper.CopyDirectory(
+                    Path.Combine(TempToolsPath, "BASE"),
+                    Path.Combine(TempSourcePath, "TEMPISOBASE")
+                );
                 if (Force43NAND.Checked)
                 {
                     File.Copy(TempToolsPath + "DOL\\FIX94_wiivc_chan_booter_force43.dol", TempSourcePath + "TEMPISOBASE\\sys\\main.dol");
@@ -2081,8 +2137,11 @@ namespace TeconMoon_s_WiiVC_Injector
             }
             if (SystemType == "gcn")
             {
-                FileSystem.CreateDirectory(TempSourcePath + "TEMPISOBASE");
-                FileSystem.CopyDirectory(TempToolsPath + "BASE", TempSourcePath + "TEMPISOBASE");
+                Directory.CreateDirectory(Path.Combine(TempSourcePath, "TEMPISOBASE"));
+                FileSystemHelper.CopyDirectory(
+                    Path.Combine(TempToolsPath, "BASE"),
+                    Path.Combine(TempSourcePath, "TEMPISOBASE")
+                );
                 if (Force43NINTENDONT.Checked)
                 {
                     if (ForceInterlacedNINTENDONT.Checked)
@@ -2283,5 +2342,179 @@ namespace TeconMoon_s_WiiVC_Injector
             }
         }
 
+        private string GetTempPath()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return Path.GetTempPath() + "WiiVCInjector\\";
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), 
+                    "Library/Caches/WiiVCInjector/");
+            }
+            else // Linux
+            {
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal),
+                    ".cache/WiiVCInjector/"); 
+            }
+        }
+
+        private void SelectOutputFolder()
+        {
+            using (var dialog = new FolderBrowserDialog())
+            {
+                dialog.Description = "Select output folder";
+                dialog.ShowNewFolderButton = true;
+                
+                if (dialog.ShowDialog() == DialogResult.OK)
+                {
+                    outputPath = dialog.SelectedPath;
+                }
+            }
+        }
+
+        // Aggiungere un metodo per estrarre i tool in base alla piattaforma
+        private void ExtractTools()
+        {
+            // Estrai i tool dalla risorsa embedded in base al sistema operativo
+            string toolsArchive = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) 
+                ? "TOOLDIR_WIN.zip"
+                : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                    ? "TOOLDIR_MAC.zip"
+                    : "TOOLDIR_LINUX.zip";
+
+            var toolsPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? TempRootPath
+                : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), 
+                        "Library/Application Support/WiiVCInjector/tools/")
+                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Personal), 
+                        ".local/share/WiiVCInjector/tools/");
+
+            Directory.CreateDirectory(toolsPath);
+            
+            // Estrai i tool specifici per la piattaforma
+            using (var stream = GetType().Assembly.GetManifestResourceStream($"TeconMoon_s_WiiVC_Injector.Resources.{toolsArchive}"))
+            using (var zip = new ZipArchive(stream, ZipArchiveMode.Read))
+            {
+                zip.ExtractToDirectory(toolsPath);
+            }
+
+            // Rendi eseguibili i file su Unix
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                foreach (var file in Directory.GetFiles(toolsPath, "*", SearchOption.AllDirectories))
+                {
+                    if (!file.EndsWith(".dll") && !file.EndsWith(".config"))
+                    {
+                        var fileInfo = new FileInfo(file);
+                        fileInfo.IsReadOnly = false;
+                        var unixFileMode = Convert.ToInt32("755", 8);
+                        chmod(file, unixFileMode);
+                    }
+                }
+            }
+        }
+
+        // Implementazione nativa di chmod per Unix
+        [DllImport("libc", SetLastError = true)]
+        private static extern int chmod(string pathname, int mode);
+
+        private void CheckSystemRequirements()
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                // Verifica Wine su macOS/Linux
+                try
+                {
+                    Process.Start("wine", "--version").WaitForExit();
+                }
+                catch
+                {
+                    MessageBox.Show(
+                        "Wine is required to run Windows tools on macOS/Linux.\n" +
+                        "Please install Wine and try again.",
+                        "Wine Not Found",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                    Environment.Exit(1);
+                }
+            }
+
+            // Verifica altri requisiti comuni
+            if (!File.Exists(Path.Combine(TempToolsPath, "WIT/wit.exe")))
+            {
+                MessageBox.Show(
+                    "Required tools are missing.\n" +
+                    "Please ensure the application was extracted correctly.",
+                    "Missing Tools",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                Environment.Exit(1);
+            }
+        }
+
+        private string GetNativeToolPath(string windowsToolPath)
+        {
+            string toolName = Path.GetFileNameWithoutExtension(windowsToolPath);
+            
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return windowsToolPath;
+            }
+            
+            var nativeToolMap = RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                ? (RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+                    ? new Dictionary<string, string> {
+                        {"wit", "wit/wit-arm64-mac"},
+                        {"wiivc", "wiivc-arm64-mac"},
+                        {"GetExtTypePatcher", "bin/get-ext-type-arm64-mac"},
+                        {"c2w_patcher", "bin/c2w_patcher-arm64-mac"},
+                        {"wii-vmc", "bin/wii-vmc-arm64-mac"},
+                        {"wbfs_file", "bin/wbfs_file-arm64-mac"},
+                        {"ConvertToISO", "bin/ConvertToISO-arm64-mac"}
+                    }
+                    : new Dictionary<string, string> {
+                        {"wit", "wit/wit-mac"},
+                        {"wiivc", "wiivc-mac"},
+                        {"GetExtTypePatcher", "bin/get-ext-type-mac"},
+                        {"c2w_patcher", "bin/c2w_patcher-mac"},
+                        {"wii-vmc", "bin/wii-vmc-mac"},
+                        {"wbfs_file", "bin/wbfs_file-mac"},
+                        {"ConvertToISO", "bin/ConvertToISO-mac"}
+                    })
+                : new Dictionary<string, string> {
+                    {"wit", "wit/wit-linux"},
+                    {"wiivc", "wiivc-linux"},
+                    {"GetExtTypePatcher", "bin/get-ext-type-linux"},
+                    {"c2w_patcher", "bin/c2w_patcher-linux"},
+                    {"wii-vmc", "bin/wii-vmc-linux"},
+                    {"wbfs_file", "bin/wbfs_file-linux"},
+                    {"ConvertToISO", "bin/ConvertToISO-linux"}
+                };
+
+            if (nativeToolMap.TryGetValue(toolName, out string nativeTool))
+            {
+                var toolPath = Path.Combine(TempToolsPath, nativeTool);
+                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    FileSystemHelper.SetExecutablePermissions(toolPath);
+                }
+                return toolPath;
+            }
+
+            throw new PlatformNotSupportedException($"Tool {toolName} non disponibile per questa piattaforma");
+        }
+
+        private string GetPlatformSpecificPath(string folder, string tool)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                return Path.Combine(folder, tool + ".exe");
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                return Path.Combine(folder.ToLower(), tool + "-mac");
+            else
+                return Path.Combine(folder.ToLower(), tool + "-linux");
+        }
     }
 }

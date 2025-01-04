@@ -1,0 +1,74 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TeconMoon_s_WiiVC_Injector.MainWindow"
+        Title="TeconMoon's WiiVC Injector"
+        Width="800" Height="600">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Section -->
+        <StackPanel Grid.Row="0" Spacing="10">
+            <TextBlock Text="ROM Selection" FontWeight="Bold"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="RomPathTextBox" Grid.Column="0" Watermark="Select ROM file..."/>
+                <Button x:Name="BrowseRomButton" Grid.Column="1" Content="Browse" Margin="5,0,0,0"/>
+            </Grid>
+            
+            <TextBlock Text="Output Directory" FontWeight="Bold"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="OutputPathTextBox" Grid.Column="0" Watermark="Select output directory..."/>
+                <Button x:Name="BrowseOutputButton" Grid.Column="1" Content="Browse" Margin="5,0,0,0"/>
+            </Grid>
+        </StackPanel>
+
+        <!-- Middle Section -->
+        <TabControl Grid.Row="1" Margin="0,10">
+            <TabItem Header="Basic Options">
+                <StackPanel Spacing="10">
+                    <ComboBox x:Name="ConsoleTypeComboBox" HorizontalAlignment="Stretch">
+                        <ComboBoxItem>Wii</ComboBoxItem>
+                        <ComboBoxItem>GameCube</ComboBoxItem>
+                    </ComboBox>
+                    
+                    <TextBlock Text="Title ID:" FontWeight="Bold"/>
+                    <TextBox x:Name="TitleIdTextBox" MaxLength="6"/>
+                    
+                    <TextBlock Text="Game Name:" FontWeight="Bold"/>
+                    <TextBox x:Name="GameNameTextBox"/>
+                </StackPanel>
+            </TabItem>
+            
+            <TabItem Header="Advanced Options">
+                <StackPanel Spacing="10">
+                    <CheckBox x:Name="ForceWideScreenCheckBox" Content="Force Widescreen"/>
+                    <CheckBox x:Name="ForcePalCheckBox" Content="Force PAL"/>
+                    <CheckBox x:Name="NoGamePadCheckBox" Content="No GamePad"/>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <!-- Bottom Section -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+            <Button x:Name="SettingsButton" Content="Settings"/>
+            <Button x:Name="StartButton" Content="Start Injection" Classes="accent"/>
+        </StackPanel>
+
+        <!-- Aggiungi prima del Bottom Section -->
+        <StackPanel Grid.Row="1" Margin="0,10" IsVisible="{Binding IsConverting}">
+            <TextBlock Text="{Binding StatusText}" Margin="0,0,0,5"/>
+            <ProgressBar Value="{Binding Progress}" Maximum="100" Height="20"/>
+        </StackPanel>
+    </Grid>
+</Window> 
